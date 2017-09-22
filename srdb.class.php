@@ -734,6 +734,28 @@ class icit_srdb {
 
 			if ( is_string( $data ) && ( $unserialized = @unserialize( $data ) ) !== false ) {
 				$data = $this->recursive_unserialize_replace( $from, $to, $unserialized, true );
+
+				// This code will be triggered when it is not possible to replace all matches inside the
+                // unserialized object. It can happen when the referenced classes in the serialized data
+                // are not in the class path (e.g. Wordpress plugins whose source code is not available
+                // during replace).
+                // The code tries to use an extended regular expression which includes the variable length
+                // field of the serialized data and fixes the length after modifying the string.
+                // This fix does only work when using regular expression replacement.
+                if (($this->regex && preg_match($from, $data)) || strpos($data, $from) !== false) {
+                    if ($this->regex) {
+                        echo "Found an inconsistency in replacement using unserialized data, trying to fix this...\n";
+                        $pattern = "/([0-9]+):\"(.*?)(" . substr($from, 1, -1) . ")/";
+                        $data = preg_replace_callback($pattern, function ($match) use ($from, $to) {
+                            $partReplace = preg_replace($from, $to, $match[3]);
+                            $lengthDiff = strlen($match[3]) - strlen($partReplace);
+                            $newLength = (int)$match[1] - $lengthDiff;
+                            return $newLength . ":\"" . $match[2] . $partReplace;
+                        }, $data);
+                    } else {
+                        echo "There is still unreplaced data, but this won't work without enabled regex.\n";
+                    }
+                }
 			}
 
 			elseif ( is_array( $data ) ) {
